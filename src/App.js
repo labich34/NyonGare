@@ -435,7 +435,7 @@ function SaisieMensuelle({ data, persist, moisData, updateMoisData, showToast, s
   };
 
   const supprimerManager = (id) => {
-    if (!confirm('Supprimer ce manager et tout son historique ?')) return;
+    if (!window.confirm('Supprimer ce manager et tout son historique ?')) return;
     persist({ ...data, managers: data.managers.filter((m) => m.id !== id) });
   };
 
@@ -1558,7 +1558,7 @@ function Configuration({ data, persist, showToast }) {
       try {
         const parsed = JSON.parse(ev.target.result);
         if (!parsed.objectifs || !parsed.mois) throw new Error('Fichier invalide');
-        if (!confirm('Cela va remplacer toutes tes données actuelles. Continuer ?')) return;
+        if (!window.confirm('Cela va remplacer toutes tes données actuelles. Continuer ?')) return;
         persist({ ...DEFAULT_DATA, ...parsed });
         showToast('Données importées');
       } catch (err) {
