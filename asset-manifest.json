@@ -1,0 +1,13 @@
+{
+  "files": {
+    "main.css": "/NyonGare/static/css/main.361e6edf.css",
+    "main.js": "/NyonGare/static/js/main.174e2668.js",
+    "index.html": "/NyonGare/index.html",
+    "main.361e6edf.css.map": "/NyonGare/static/css/main.361e6edf.css.map",
+    "main.174e2668.js.map": "/NyonGare/static/js/main.174e2668.js.map"
+  },
+  "entrypoints": [
+    "static/css/main.361e6edf.css",
+    "static/js/main.174e2668.js"
+  ]
+}
