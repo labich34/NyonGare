@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { TrendingUp, TrendingDown, Star, Users, Target, Award, Plus, Trash2, BarChart3, MessageSquare, Video, AlertCircle, CheckCircle2, Sparkles, Brush, GraduationCap, DollarSign, ChevronDown, ChevronUp, ExternalLink, Loader2, Wand2, FileDown, Share2, Upload, Download, FileText, Bell, Camera, X, Eye, Edit3 } from 'lucide-react';
+import { TrendingUp, TrendingDown, Star, Users, Target, Award, Plus, Trash2, BarChart3, MessageSquare, Video, AlertCircle, CheckCircle2, Sparkles, Brush, GraduationCap, DollarSign, ChevronDown, ChevronUp, ExternalLink, Loader2, Wand2, FileDown, Share2, Upload, Download, FileText, Bell, Camera, X, Eye, Edit3, ShoppingBag } from 'lucide-react';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from 'recharts';
 
 const DEFAULT_OBJECTIFS_POLE = { avisGoogleNombre: 50, avisGoogleNote: 4.2, fastInside: 85, oep: 12 };
@@ -60,10 +60,75 @@ const DEFAULT_DATA = {
   poidsHospitalite: SOUS_CRITERES_HOSPITALITE.reduce((acc, c) => ({ ...acc, [c.id]: c.poidsDefaut }), {}),
   managers: [],
   mois: {},
+  jours: {}, // v9 : { 'YYYY-MM': { 'JJ': { avisNouveaux, note, fastInside, oep } } }
   tiktok: {},
+  uberEats: {}, // v9 : { 'YYYY-MM': { reclamations: [{ id, date, numeroCommande, typeErreur, commentaire }] } }
   rapportsAuto: {},
   rapportsAutoIgnores: [],
 };
+
+// === v9 : Helpers données journalières ===
+// Nombre de jours dans un mois donné (format 'YYYY-MM')
+function joursDansMois(moisYYYYMM) {
+  const [annee, mois] = moisYYYYMM.split('-').map(Number);
+  return new Date(annee, mois, 0).getDate();
+}
+
+// Calcule les moyennes/cumuls mensuels à partir des saisies journalières
+// Retourne { avisGoogleNombre, avisGoogleNote, fastInside, oep, joursSaisis, totalJours, joursNote, joursFast, joursOep }
+function calculerMoyennesMois(joursDuMois) {
+  const jours = joursDuMois || {};
+  let cumulAvis = 0;
+  const notes = [];
+  const fasts = [];
+  const oeps = [];
+  let joursSaisis = 0;
+
+  Object.values(jours).forEach((j) => {
+    const aSaisie = (j.avisNouveaux !== '' && j.avisNouveaux !== undefined && !isNaN(parseFloat(j.avisNouveaux)))
+      || (j.note !== '' && j.note !== undefined && !isNaN(parseFloat(j.note)))
+      || (j.fastInside !== '' && j.fastInside !== undefined && !isNaN(parseFloat(j.fastInside)))
+      || (j.oep !== '' && j.oep !== undefined && !isNaN(parseFloat(j.oep)));
+    if (aSaisie) joursSaisis++;
+
+    const av = parseFloat(j.avisNouveaux);
+    if (!isNaN(av)) cumulAvis += av;
+    const n = parseFloat(j.note);
+    if (!isNaN(n)) notes.push(n);
+    const f = parseFloat(j.fastInside);
+    if (!isNaN(f)) fasts.push(f);
+    const o = parseFloat(j.oep);
+    if (!isNaN(o)) oeps.push(o);
+  });
+
+  const moy = (arr) => arr.length === 0 ? '' : (arr.reduce((s, v) => s + v, 0) / arr.length);
+  return {
+    avisGoogleNombre: cumulAvis === 0 && Object.keys(jours).length === 0 ? '' : String(cumulAvis),
+    avisGoogleNote: notes.length === 0 ? '' : String(Math.round(moy(notes) * 100) / 100),
+    fastInside: fasts.length === 0 ? '' : String(Math.round(moy(fasts) * 10) / 10),
+    oep: oeps.length === 0 ? '' : String(Math.round(moy(oeps) * 10) / 10),
+    joursSaisis,
+    joursNote: notes.length,
+    joursFast: fasts.length,
+    joursOep: oeps.length,
+  };
+}
+
+// Fusionne les KPIs calculés depuis les jours avec les autres champs du mois (évaluations, avisDetailles, notes...)
+function reconstruireMoisData(joursDuMois, moisDataBrut) {
+  const moy = calculerMoyennesMois(joursDuMois);
+  const base = moisDataBrut || { avisDetailles: [], evaluations: {}, notes: '' };
+  // Si pas de jours saisis, on garde les valeurs mensuelles historiques (rétrocompat v8)
+  const hasJours = moy.joursSaisis > 0;
+  return {
+    ...base,
+    avisGoogleNombre: hasJours ? moy.avisGoogleNombre : (base.avisGoogleNombre || ''),
+    avisGoogleNote: hasJours ? moy.avisGoogleNote : (base.avisGoogleNote || ''),
+    fastInside: hasJours ? moy.fastInside : (base.fastInside || ''),
+    oep: hasJours ? moy.oep : (base.oep || ''),
+    _moy: moy, // métadonnées pour UI
+  };
+}
 
 async function compresserImage(file, maxSize = 200) {
   return new Promise((resolve, reject) => {
@@ -177,15 +242,32 @@ export default function App() {
     setTimeout(() => setToast(null), 3000);
   };
 
-  const moisData = data.mois[data.moisActif] || { avisGoogleNombre: '', avisGoogleNote: '', fastInside: '', oep: '', avisDetailles: [], evaluations: {}, notes: '' };
+  const moisDataBrut = data.mois[data.moisActif] || { avisGoogleNombre: '', avisGoogleNote: '', fastInside: '', oep: '', avisDetailles: [], evaluations: {}, notes: '' };
+  const joursDuMois = data.jours?.[data.moisActif] || {};
+  const moisData = reconstruireMoisData(joursDuMois, moisDataBrut);
 
   const updateMoisData = (patch) => {
-    persist({ ...data, mois: { ...data.mois, [data.moisActif]: { ...moisData, ...patch } } });
+    // patch contient des champs comme avisDetailles, evaluations, notes : on les écrit dans data.mois
+    // Les KPIs (avisGoogleNombre, etc.) ne sont plus modifiables ici, ils sont calculés depuis jours.
+    const { _moy, ...patchClean } = patch;
+    persist({ ...data, mois: { ...data.mois, [data.moisActif]: { ...moisDataBrut, ...patchClean } } });
+  };
+
+  const updateJour = (jour, patch) => {
+    const joursMois = { ...(data.jours?.[data.moisActif] || {}) };
+    const jourCle = String(jour).padStart(2, '0');
+    joursMois[jourCle] = { ...(joursMois[jourCle] || {}), ...patch };
+    persist({ ...data, jours: { ...(data.jours || {}), [data.moisActif]: joursMois } });
   };
 
   const tiktokData = data.tiktok[data.moisActif] || { videos: [] };
   const updateTiktok = (patch) => {
     persist({ ...data, tiktok: { ...data.tiktok, [data.moisActif]: { ...tiktokData, ...patch } } });
+  };
+
+  const uberEatsData = data.uberEats?.[data.moisActif] || { reclamations: [] };
+  const updateUberEats = (patch) => {
+    persist({ ...data, uberEats: { ...(data.uberEats || {}), [data.moisActif]: { ...uberEatsData, ...patch } } });
   };
 
   if (!loaded) return <div className="min-h-screen bg-zinc-950 flex items-center justify-center text-zinc-500">Chargement...</div>;
@@ -235,6 +317,7 @@ export default function App() {
             { id: 'avis', label: 'Avis Google', icon: MessageSquare },
             { id: 'managers', label: 'Managers', icon: Users },
             { id: 'tiktok', label: 'TikTok', icon: Video },
+            { id: 'ubereats', label: 'Uber Eats', icon: ShoppingBag },
             { id: 'rapport', label: 'Rapport mensuel', icon: FileText },
             { id: 'config', label: 'Configuration', icon: Award },
           ].map((t) => {
@@ -250,10 +333,11 @@ export default function App() {
 
       <main className="max-w-7xl mx-auto px-6 py-8">
         {tab === 'dashboard' && <Dashboard data={data} moisData={moisData} tiktokData={tiktokData} setTab={setTab} persist={persist} />}
-        {tab === 'kpis' && <SaisieMensuelle data={data} persist={persist} moisData={moisData} updateMoisData={updateMoisData} showToast={showToast} setTab={setTab} />}
+        {tab === 'kpis' && <SaisieMensuelle data={data} persist={persist} moisData={moisData} updateMoisData={updateMoisData} updateJour={updateJour} joursDuMois={joursDuMois} showToast={showToast} setTab={setTab} />}
         {tab === 'avis' && <AvisGoogle moisData={moisData} updateMoisData={updateMoisData} />}
         {tab === 'managers' && <ManagersConsultation data={data} moisData={moisData} setTab={setTab} />}
         {tab === 'tiktok' && <TikTokModule tiktokData={tiktokData} updateTiktok={updateTiktok} />}
+        {tab === 'ubereats' && <UberEatsModule uberEatsData={uberEatsData} updateUberEats={updateUberEats} moisActif={data.moisActif} />}
         {tab === 'rapport' && <RapportMensuel data={data} persist={persist} showToast={showToast} />}
         {tab === 'config' && <Configuration data={data} persist={persist} showToast={showToast} />}
       </main>
@@ -421,8 +505,146 @@ function Field({ label, objectif, children }) {
 const inputClass = "w-full px-3 py-2 border border-zinc-700 bg-zinc-800 text-zinc-100 rounded-lg placeholder:text-zinc-500 focus:border-red-500 focus:outline-none";
 const inputClassSm = "w-full px-2 py-1 border border-zinc-700 bg-zinc-800 text-zinc-100 rounded text-sm placeholder:text-zinc-500 focus:border-red-500 focus:outline-none";
 
+// === v9 : Bandeau récap des moyennes du mois (calculées depuis les jours) ===
+function SaisieJourneeRecap({ moisData, data }) {
+  const moy = moisData._moy || { joursSaisis: 0, joursNote: 0, joursFast: 0, joursOep: 0 };
+  const totalJours = joursDansMois(data.moisActif);
+
+  const Cell = ({ label, value, target, unit = '', n }) => {
+    const num = parseFloat(value);
+    const t = parseFloat(target);
+    const ok = !isNaN(num) && !isNaN(t) && num >= t * 0.95;
+    const couleur = isNaN(num) ? 'text-zinc-500' : ok ? 'text-emerald-400' : num >= t * 0.7 ? 'text-amber-400' : 'text-red-400';
+    return (
+      <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-3">
+        <div className="text-xs text-zinc-500 mb-1">{label}</div>
+        <div className={`text-xl font-bold ${couleur}`}>{isNaN(num) ? '—' : num}{unit}</div>
+        <div className="text-[10px] text-zinc-600 mt-1">{n !== undefined ? `${n} jour${n > 1 ? 's' : ''}` : ''} · obj. {target}{unit}</div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-4 mb-4">
+      <div className="flex items-center justify-between mb-3">
+        <div className="text-sm font-semibold text-zinc-300">Synthèse du mois (auto)</div>
+        <div className="text-xs text-zinc-500">{moy.joursSaisis}/{totalJours} jours saisis</div>
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+        <Cell label="Cumul avis Google" value={moisData.avisGoogleNombre} target={data.objectifs.avisGoogleNombre} />
+        <Cell label="Note Google moyenne" value={moisData.avisGoogleNote} target={data.objectifs.avisGoogleNote} unit="/5" n={moy.joursNote} />
+        <Cell label="Fast Inside moyen" value={moisData.fastInside} target={data.objectifs.fastInside} unit="%" n={moy.joursFast} />
+        <Cell label="O&P moyen" value={moisData.oep} target={data.objectifs.oep} unit="%" n={moy.joursOep} />
+      </div>
+    </div>
+  );
+}
+
+// === v9 : Liste verticale des jours du mois pour saisie ===
+function SaisieJourneeListe({ moisActif, joursDuMois, updateJour }) {
+  const totalJours = joursDansMois(moisActif);
+  const [annee, mois] = moisActif.split('-').map(Number);
+  const aujourdhui = new Date();
+  const estAujourdhui = (jour) => aujourdhui.getFullYear() === annee && (aujourdhui.getMonth() + 1) === mois && aujourdhui.getDate() === jour;
+  const estFutur = (jour) => {
+    const d = new Date(annee, mois - 1, jour);
+    const auj = new Date(aujourdhui.getFullYear(), aujourdhui.getMonth(), aujourdhui.getDate());
+    return d > auj;
+  };
+
+  const nomJour = (jour) => {
+    const d = new Date(annee, mois - 1, jour);
+    return ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'][d.getDay()];
+  };
+
+  const cellClass = "w-full px-2 py-1.5 border border-zinc-700 bg-zinc-800 text-zinc-100 rounded text-sm placeholder:text-zinc-600 focus:border-red-500 focus:outline-none";
+
+  return (
+    <div className="bg-zinc-900 rounded-xl border border-zinc-800 overflow-hidden">
+      {/* En-tête */}
+      <div className="grid grid-cols-12 gap-2 px-3 py-2 bg-zinc-950/50 border-b border-zinc-800 text-[10px] font-semibold text-zinc-500 uppercase tracking-wider">
+        <div className="col-span-2">Jour</div>
+        <div className="col-span-2">Nouveaux avis</div>
+        <div className="col-span-3">Note /5</div>
+        <div className="col-span-2">Fast Inside %</div>
+        <div className="col-span-3">O&P %</div>
+      </div>
+
+      {/* Lignes */}
+      <div className="divide-y divide-zinc-800">
+        {Array.from({ length: totalJours }, (_, i) => i + 1).map((jour) => {
+          const jourCle = String(jour).padStart(2, '0');
+          const j = joursDuMois[jourCle] || {};
+          const isToday = estAujourdhui(jour);
+          const isFutur = estFutur(jour);
+          const weekend = ['Sam', 'Dim'].includes(nomJour(jour));
+
+          return (
+            <div
+              key={jour}
+              className={`grid grid-cols-12 gap-2 px-3 py-2 items-center ${isToday ? 'bg-red-950/20 border-l-2 border-red-500' : isFutur ? 'opacity-50' : weekend ? 'bg-zinc-950/30' : ''}`}
+            >
+              <div className="col-span-2">
+                <div className="flex items-center gap-2">
+                  <div className={`text-sm font-medium ${isToday ? 'text-red-400' : 'text-zinc-300'}`}>{jourCle}</div>
+                  <div className="text-[10px] text-zinc-500">{nomJour(jour)}</div>
+                </div>
+              </div>
+              <div className="col-span-2">
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  value={j.avisNouveaux ?? ''}
+                  onChange={(e) => updateJour(jour, { avisNouveaux: e.target.value })}
+                  className={cellClass}
+                  placeholder="—"
+                />
+              </div>
+              <div className="col-span-3">
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  step="0.1"
+                  min="0"
+                  max="5"
+                  value={j.note ?? ''}
+                  onChange={(e) => updateJour(jour, { note: e.target.value })}
+                  className={cellClass}
+                  placeholder="—"
+                />
+              </div>
+              <div className="col-span-2">
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  step="0.1"
+                  value={j.fastInside ?? ''}
+                  onChange={(e) => updateJour(jour, { fastInside: e.target.value })}
+                  className={cellClass}
+                  placeholder="—"
+                />
+              </div>
+              <div className="col-span-3">
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  step="0.1"
+                  value={j.oep ?? ''}
+                  onChange={(e) => updateJour(jour, { oep: e.target.value })}
+                  className={cellClass}
+                  placeholder="—"
+                />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // === SAISIE MENSUELLE : KPIs + liste des managers à évaluer ===
-function SaisieMensuelle({ data, persist, moisData, updateMoisData, showToast, setTab }) {
+function SaisieMensuelle({ data, persist, moisData, updateMoisData, updateJour, joursDuMois, showToast, setTab }) {
   const [nouveauNom, setNouveauNom] = useState('');
   const [managerOuvert, setManagerOuvert] = useState(null);
 
@@ -481,30 +703,28 @@ function SaisieMensuelle({ data, persist, moisData, updateMoisData, showToast, s
         <p className="text-zinc-500 text-sm">Renseigne les KPIs du pôle puis évalue chaque manager</p>
       </div>
 
-      {/* === SECTION 1 : KPIs DU PÔLE === */}
+      {/* === SECTION 1 : KPIs DU PÔLE — SAISIE JOURNALIÈRE === */}
       <div>
         <div className="flex items-center gap-2 mb-3">
           <div className="w-1 h-6 bg-red-500 rounded"></div>
           <h3 className="display text-lg font-bold text-zinc-100">KPIs du pôle</h3>
-          <span className="text-xs text-zinc-500">— prime mensuelle</span>
+          <span className="text-xs text-zinc-500">— saisie journalière, moyennes calculées automatiquement</span>
         </div>
-        <div className="bg-zinc-900 rounded-xl p-6 border border-zinc-800 space-y-5">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            <Field label="Nombre d'avis Google reçus" objectif={`Objectif : ≥ ${data.objectifs.avisGoogleNombre}`}>
-              <input type="number" value={moisData.avisGoogleNombre} onChange={(e) => updateMoisData({ avisGoogleNombre: e.target.value })} className={inputClass} />
-            </Field>
-            <Field label="Note Google moyenne" objectif={`Objectif : ≥ ${data.objectifs.avisGoogleNote}/5`}>
-              <input type="number" step="0.1" min="0" max="5" value={moisData.avisGoogleNote} onChange={(e) => updateMoisData({ avisGoogleNote: e.target.value })} className={inputClass} />
-            </Field>
-            <Field label="Note Fast Inside (%)" objectif={`Objectif : ≥ ${data.objectifs.fastInside}%`}>
-              <input type="number" value={moisData.fastInside} onChange={(e) => updateMoisData({ fastInside: e.target.value })} className={inputClass} />
-            </Field>
-            <Field label="O&P (%)" objectif={`Objectif : ≥ ${data.objectifs.oep}%`}>
-              <input type="number" step="0.1" value={moisData.oep} onChange={(e) => updateMoisData({ oep: e.target.value })} className={inputClass} />
-            </Field>
-          </div>
-          <Field label="Notes & commentaires libres">
-            <textarea value={moisData.notes} onChange={(e) => updateMoisData({ notes: e.target.value })} rows={3} className={inputClass} placeholder="Faits marquants, plans d'action, contexte..." />
+
+        {/* Bandeau récap des moyennes du mois */}
+        <SaisieJourneeRecap moisData={moisData} data={data} />
+
+        {/* Liste journalière */}
+        <SaisieJourneeListe
+          moisActif={data.moisActif}
+          joursDuMois={joursDuMois}
+          updateJour={updateJour}
+        />
+
+        {/* Notes & commentaires (toujours mensuels) */}
+        <div className="bg-zinc-900 rounded-xl p-6 border border-zinc-800 mt-4">
+          <Field label="Notes & commentaires du mois">
+            <textarea value={moisData.notes || ''} onChange={(e) => updateMoisData({ notes: e.target.value })} rows={3} className={inputClass} placeholder="Faits marquants, plans d'action, contexte..." />
           </Field>
         </div>
       </div>
@@ -1013,6 +1233,147 @@ function AvisGoogle({ moisData, updateMoisData }) {
             <p className="text-sm text-zinc-300">{a.texte}</p>
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+function UberEatsModule({ uberEatsData, updateUberEats, moisActif }) {
+  const reclamations = uberEatsData.reclamations || [];
+  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [numeroCommande, setNumeroCommande] = useState('');
+  const [typeErreur, setTypeErreur] = useState('');
+  const [commentaire, setCommentaire] = useState('');
+
+  const ajouter = () => {
+    if (!numeroCommande.trim() && !typeErreur.trim()) return;
+    const nouvelle = {
+      id: Date.now(),
+      date: date || new Date().toISOString().slice(0, 10),
+      numeroCommande: numeroCommande.trim(),
+      typeErreur: typeErreur.trim(),
+      commentaire: commentaire.trim(),
+    };
+    updateUberEats({ reclamations: [nouvelle, ...reclamations] });
+    setNumeroCommande('');
+    setTypeErreur('');
+    setCommentaire('');
+    setDate(new Date().toISOString().slice(0, 10));
+  };
+
+  const supprimer = (id) => {
+    if (!window.confirm('Supprimer cette réclamation ?')) return;
+    updateUberEats({ reclamations: reclamations.filter((r) => r.id !== id) });
+  };
+
+  // Top 3 des types d'erreurs (statistiques)
+  const statsErreurs = (() => {
+    const compteur = {};
+    reclamations.forEach((r) => {
+      if (!r.typeErreur) return;
+      const key = r.typeErreur.trim().toLowerCase();
+      compteur[key] = (compteur[key] || 0) + 1;
+    });
+    return Object.entries(compteur)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([type, n]) => ({ type, n }));
+  })();
+
+  const reclamationsTriees = [...reclamations].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="display text-2xl font-bold text-zinc-50">Uber Eats · {moisLabel(moisActif)}</h2>
+        <p className="text-zinc-500 text-sm">Suivi des réclamations clients du mois</p>
+      </div>
+
+      {/* Stats du mois */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
+          <div className="text-xs text-zinc-500 mb-1">Total réclamations</div>
+          <div className="text-3xl font-bold text-zinc-100">{reclamations.length}</div>
+        </div>
+        {statsErreurs.map((s, i) => (
+          <div key={s.type} className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
+            <div className="text-xs text-zinc-500 mb-1">#{i + 1} type le plus fréquent</div>
+            <div className="text-lg font-bold text-zinc-100 capitalize truncate">{s.type}</div>
+            <div className="text-xs text-zinc-500 mt-1">{s.n} réclamation{s.n > 1 ? 's' : ''}</div>
+          </div>
+        ))}
+        {statsErreurs.length === 0 && (
+          <div className="md:col-span-3 bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex items-center justify-center text-sm text-zinc-500">
+            Statistiques disponibles dès la première réclamation
+          </div>
+        )}
+      </div>
+
+      {/* Formulaire d'ajout */}
+      <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5">
+        <div className="flex items-center gap-2 mb-4">
+          <div className="w-1 h-6 bg-red-500 rounded"></div>
+          <h3 className="display text-lg font-bold text-zinc-100">Nouvelle réclamation</h3>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Field label="Date">
+            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={inputClass} />
+          </Field>
+          <Field label="N° de commande">
+            <input type="text" value={numeroCommande} onChange={(e) => setNumeroCommande(e.target.value)} placeholder="Ex : #A1B2C3" className={inputClass} />
+          </Field>
+          <Field label="Type d'erreur">
+            <input type="text" value={typeErreur} onChange={(e) => setTypeErreur(e.target.value)} placeholder="Ex : article manquant, mauvaise sauce..." className={inputClass} />
+          </Field>
+          <Field label="Commentaire">
+            <input type="text" value={commentaire} onChange={(e) => setCommentaire(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && ajouter()} placeholder="Détails, geste commercial..." className={inputClass} />
+          </Field>
+        </div>
+        <button onClick={ajouter} className="mt-4 px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg text-sm font-medium flex items-center gap-2">
+          <Plus className="w-4 h-4" /> Ajouter la réclamation
+        </button>
+      </div>
+
+      {/* Liste des réclamations */}
+      <div>
+        <div className="flex items-center gap-2 mb-3">
+          <div className="w-1 h-6 bg-red-500 rounded"></div>
+          <h3 className="display text-lg font-bold text-zinc-100">Historique du mois</h3>
+          <span className="text-xs text-zinc-500">— {reclamations.length} entrée{reclamations.length > 1 ? 's' : ''}</span>
+        </div>
+
+        {reclamations.length === 0 ? (
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-12 text-center">
+            <ShoppingBag className="w-12 h-12 text-zinc-700 mx-auto mb-3" />
+            <p className="text-zinc-400 font-medium mb-1">Aucune réclamation ce mois-ci</p>
+            <p className="text-sm text-zinc-500">Utilise le formulaire au-dessus pour ajouter une entrée</p>
+          </div>
+        ) : (
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
+            <div className="grid grid-cols-12 gap-2 px-4 py-2 bg-zinc-950/50 border-b border-zinc-800 text-[10px] font-semibold text-zinc-500 uppercase tracking-wider">
+              <div className="col-span-2">Date</div>
+              <div className="col-span-2">N° commande</div>
+              <div className="col-span-3">Type d'erreur</div>
+              <div className="col-span-4">Commentaire</div>
+              <div className="col-span-1"></div>
+            </div>
+            <div className="divide-y divide-zinc-800">
+              {reclamationsTriees.map((r) => (
+                <div key={r.id} className="grid grid-cols-12 gap-2 px-4 py-3 items-center text-sm">
+                  <div className="col-span-2 text-zinc-300">{r.date ? new Date(r.date).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' }) : '—'}</div>
+                  <div className="col-span-2 text-zinc-200 font-mono text-xs truncate">{r.numeroCommande || '—'}</div>
+                  <div className="col-span-3 text-zinc-200 truncate">{r.typeErreur || '—'}</div>
+                  <div className="col-span-4 text-zinc-400 text-xs truncate">{r.commentaire || ''}</div>
+                  <div className="col-span-1 flex justify-end">
+                    <button onClick={() => supprimer(r.id)} className="p-1.5 text-zinc-500 hover:text-red-400 transition" title="Supprimer">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
