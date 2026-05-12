@@ -1,13 +1,13 @@
 {
   "files": {
-    "main.css": "/NyonGare/static/css/main.9a76a760.css",
-    "main.js": "/NyonGare/static/js/main.9538787f.js",
+    "main.css": "/NyonGare/static/css/main.031b287a.css",
+    "main.js": "/NyonGare/static/js/main.44ee0027.js",
     "index.html": "/NyonGare/index.html",
-    "main.9a76a760.css.map": "/NyonGare/static/css/main.9a76a760.css.map",
-    "main.9538787f.js.map": "/NyonGare/static/js/main.9538787f.js.map"
+    "main.031b287a.css.map": "/NyonGare/static/css/main.031b287a.css.map",
+    "main.44ee0027.js.map": "/NyonGare/static/js/main.44ee0027.js.map"
   },
   "entrypoints": [
-    "static/css/main.9a76a760.css",
-    "static/js/main.9538787f.js"
+    "static/css/main.031b287a.css",
+    "static/js/main.44ee0027.js"
   ]
 }
