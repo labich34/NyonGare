@@ -540,10 +540,11 @@ function SaisieJourneeRecap({ moisData, data }) {
   );
 }
 
-// === v9 : Liste verticale des jours du mois pour saisie ===
+// === v9 : Liste verticale des jours du mois, repliables ===
 function SaisieJourneeListe({ moisActif, joursDuMois, updateJour }) {
   const totalJours = joursDansMois(moisActif);
   const [annee, mois] = moisActif.split('-').map(Number);
+  const [ouverts, setOuverts] = useState({}); // { '01': true, '02': false, ... }
   const aujourdhui = new Date();
   const estAujourdhui = (jour) => aujourdhui.getFullYear() === annee && (aujourdhui.getMonth() + 1) === mois && aujourdhui.getDate() === jour;
   const estFutur = (jour) => {
@@ -551,23 +552,52 @@ function SaisieJourneeListe({ moisActif, joursDuMois, updateJour }) {
     const auj = new Date(aujourdhui.getFullYear(), aujourdhui.getMonth(), aujourdhui.getDate());
     return d > auj;
   };
-
   const nomJour = (jour) => {
     const d = new Date(annee, mois - 1, jour);
     return ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'][d.getDay()];
   };
 
+  const toggleJour = (jourCle) => setOuverts({ ...ouverts, [jourCle]: !ouverts[jourCle] });
+
+  const toggleTous = () => {
+    const tousOuverts = Object.keys(ouverts).filter((k) => ouverts[k]).length > totalJours / 2;
+    if (tousOuverts) {
+      setOuverts({});
+    } else {
+      const o = {};
+      for (let i = 1; i <= totalJours; i++) o[String(i).padStart(2, '0')] = true;
+      setOuverts(o);
+    }
+  };
+
   const cellClass = "w-full px-2 py-1.5 border border-zinc-700 bg-zinc-800 text-zinc-100 rounded text-sm placeholder:text-zinc-600 focus:border-red-500 focus:outline-none";
+
+  // Résumé condensé pour ligne repliée
+  const resume = (j) => {
+    const parts = [];
+    if (j.avisNouveaux !== undefined && j.avisNouveaux !== '' && !isNaN(parseFloat(j.avisNouveaux))) parts.push(`${j.avisNouveaux} avis`);
+    if (j.note !== undefined && j.note !== '' && !isNaN(parseFloat(j.note))) parts.push(`${j.note}/5`);
+    if (j.fastInside !== undefined && j.fastInside !== '' && !isNaN(parseFloat(j.fastInside))) parts.push(`Fast ${j.fastInside}%`);
+    if (j.oep !== undefined && j.oep !== '' && !isNaN(parseFloat(j.oep))) parts.push(`O&P ${j.oep}%`);
+    return parts.length === 0 ? null : parts.join(' · ');
+  };
+
+  const aSaisie = (j) =>
+    (j.avisNouveaux !== undefined && j.avisNouveaux !== '' && !isNaN(parseFloat(j.avisNouveaux))) ||
+    (j.note !== undefined && j.note !== '' && !isNaN(parseFloat(j.note))) ||
+    (j.fastInside !== undefined && j.fastInside !== '' && !isNaN(parseFloat(j.fastInside))) ||
+    (j.oep !== undefined && j.oep !== '' && !isNaN(parseFloat(j.oep)));
+
+  const nbOuverts = Object.keys(ouverts).filter((k) => ouverts[k]).length;
 
   return (
     <div className="bg-zinc-900 rounded-xl border border-zinc-800 overflow-hidden">
-      {/* En-tête */}
-      <div className="grid grid-cols-12 gap-2 px-3 py-2 bg-zinc-950/50 border-b border-zinc-800 text-[10px] font-semibold text-zinc-500 uppercase tracking-wider">
-        <div className="col-span-2">Jour</div>
-        <div className="col-span-2">Nouveaux avis</div>
-        <div className="col-span-3">Note /5</div>
-        <div className="col-span-2">Fast Inside %</div>
-        <div className="col-span-3">O&P %</div>
+      {/* En-tête avec bouton "tout déplier" */}
+      <div className="flex items-center justify-between px-3 py-2 bg-zinc-950/50 border-b border-zinc-800">
+        <div className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider">Saisie journalière · clique pour déplier</div>
+        <button onClick={toggleTous} className="text-xs text-zinc-400 hover:text-red-400 transition flex items-center gap-1">
+          {nbOuverts > totalJours / 2 ? <><ChevronUp className="w-3 h-3" /> Tout replier</> : <><ChevronDown className="w-3 h-3" /> Tout déplier</>}
+        </button>
       </div>
 
       {/* Lignes */}
@@ -578,63 +608,89 @@ function SaisieJourneeListe({ moisActif, joursDuMois, updateJour }) {
           const isToday = estAujourdhui(jour);
           const isFutur = estFutur(jour);
           const weekend = ['Sam', 'Dim'].includes(nomJour(jour));
+          const isOpen = !!ouverts[jourCle];
+          const saisi = aSaisie(j);
+          const r = resume(j);
 
           return (
-            <div
-              key={jour}
-              className={`grid grid-cols-12 gap-2 px-3 py-2 items-center ${isToday ? 'bg-red-950/20 border-l-2 border-red-500' : isFutur ? 'opacity-50' : weekend ? 'bg-zinc-950/30' : ''}`}
-            >
-              <div className="col-span-2">
-                <div className="flex items-center gap-2">
+            <div key={jour} className={`${isToday ? 'bg-red-950/20 border-l-2 border-red-500' : isFutur ? 'opacity-60' : weekend ? 'bg-zinc-950/30' : ''}`}>
+              {/* Ligne récap cliquable */}
+              <button
+                onClick={() => toggleJour(jourCle)}
+                className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-zinc-800/40 transition text-left"
+              >
+                {/* Chevron */}
+                <div className="text-zinc-500 w-4 flex-shrink-0">
+                  {isOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                </div>
+                {/* Indicateur saisi */}
+                <div className={`w-2 h-2 rounded-full flex-shrink-0 ${saisi ? 'bg-emerald-500' : 'bg-zinc-700'}`}></div>
+                {/* Jour */}
+                <div className="flex items-center gap-2 w-20 flex-shrink-0">
                   <div className={`text-sm font-medium ${isToday ? 'text-red-400' : 'text-zinc-300'}`}>{jourCle}</div>
                   <div className="text-[10px] text-zinc-500">{nomJour(jour)}</div>
+                  {isToday && <span className="text-[9px] uppercase tracking-wider text-red-400 font-bold">·now</span>}
                 </div>
-              </div>
-              <div className="col-span-2">
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  value={j.avisNouveaux ?? ''}
-                  onChange={(e) => updateJour(jour, { avisNouveaux: e.target.value })}
-                  className={cellClass}
-                  placeholder="—"
-                />
-              </div>
-              <div className="col-span-3">
-                <input
-                  type="number"
-                  inputMode="decimal"
-                  step="0.1"
-                  min="0"
-                  max="5"
-                  value={j.note ?? ''}
-                  onChange={(e) => updateJour(jour, { note: e.target.value })}
-                  className={cellClass}
-                  placeholder="—"
-                />
-              </div>
-              <div className="col-span-2">
-                <input
-                  type="number"
-                  inputMode="decimal"
-                  step="0.1"
-                  value={j.fastInside ?? ''}
-                  onChange={(e) => updateJour(jour, { fastInside: e.target.value })}
-                  className={cellClass}
-                  placeholder="—"
-                />
-              </div>
-              <div className="col-span-3">
-                <input
-                  type="number"
-                  inputMode="decimal"
-                  step="0.1"
-                  value={j.oep ?? ''}
-                  onChange={(e) => updateJour(jour, { oep: e.target.value })}
-                  className={cellClass}
-                  placeholder="—"
-                />
-              </div>
+                {/* Résumé condensé */}
+                <div className="flex-1 text-xs text-zinc-400 truncate">
+                  {r || <span className="text-zinc-600 italic">aucune saisie</span>}
+                </div>
+              </button>
+
+              {/* Zone de saisie dépliée */}
+              {isOpen && (
+                <div className="px-3 pb-3 pt-1 grid grid-cols-2 md:grid-cols-4 gap-2 bg-zinc-950/30 border-t border-zinc-800/50">
+                  <div>
+                    <label className="block text-[10px] text-zinc-500 uppercase tracking-wider mb-1">Nouveaux avis</label>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      value={j.avisNouveaux ?? ''}
+                      onChange={(e) => updateJour(jour, { avisNouveaux: e.target.value })}
+                      className={cellClass}
+                      placeholder="—"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-zinc-500 uppercase tracking-wider mb-1">Note /5</label>
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      step="0.1"
+                      min="0"
+                      max="5"
+                      value={j.note ?? ''}
+                      onChange={(e) => updateJour(jour, { note: e.target.value })}
+                      className={cellClass}
+                      placeholder="—"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-zinc-500 uppercase tracking-wider mb-1">Fast Inside %</label>
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      step="0.1"
+                      value={j.fastInside ?? ''}
+                      onChange={(e) => updateJour(jour, { fastInside: e.target.value })}
+                      className={cellClass}
+                      placeholder="—"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-zinc-500 uppercase tracking-wider mb-1">O&P %</label>
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      step="0.1"
+                      value={j.oep ?? ''}
+                      onChange={(e) => updateJour(jour, { oep: e.target.value })}
+                      className={cellClass}
+                      placeholder="—"
+                    />
+                  </div>
+                </div>
+              )}
             </div>
           );
         })}
