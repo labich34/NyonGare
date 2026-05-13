@@ -36,7 +36,22 @@ function calculerProgression(valeur, cible) {
   const c = parseFloat(cible);
   if (isNaN(v) || isNaN(c) || c === 0) return { pct: 0, atteint: false, hasValue: false };
   const pct = Math.max(0, Math.min(100, (v / c) * 100));
-  return { pct, atteint: pct >= 95, hasValue: true };
+  return { pct, atteint: pct >= 100, hasValue: true };
+}
+
+// === v9 : Helper centralisé pour les couleurs de progression ===
+// 0-49 rouge · 50-74 orange · 75-99 jaune · 100+ vert
+function couleurProgression(pct) {
+  if (pct >= 100) return 'bg-emerald-500';
+  if (pct >= 75) return 'bg-yellow-400';
+  if (pct >= 50) return 'bg-orange-500';
+  return 'bg-red-500';
+}
+function couleurProgressionText(pct) {
+  if (pct >= 100) return 'text-emerald-400';
+  if (pct >= 75) return 'text-yellow-400';
+  if (pct >= 50) return 'text-orange-400';
+  return 'text-red-400';
 }
 
 const SOUS_CRITERES_HOSPITALITE = [
@@ -349,23 +364,31 @@ function ProgressBar({ pct, atteint, hasValue }) {
   if (!hasValue) {
     return <div className="w-full h-2 bg-zinc-800 rounded-full overflow-hidden"><div className="h-full bg-zinc-700" style={{ width: '0%' }} /></div>;
   }
-  const couleur = atteint ? 'bg-emerald-500' : pct >= 70 ? 'bg-amber-500' : 'bg-red-500';
+  const couleur = couleurProgression(pct);
   const glow = atteint ? 'shadow-[0_0_8px_rgba(16,185,129,0.5)]' : '';
   return (
     <div className="w-full h-2 bg-zinc-800 rounded-full overflow-hidden relative">
       <div className={`h-full ${couleur} ${glow} transition-all duration-500`} style={{ width: `${pct}%` }} />
-      <div className="absolute top-0 bottom-0 border-l-2 border-zinc-500 border-dashed" style={{ left: '95%' }} />
+      <div className="absolute top-0 bottom-0 border-l-2 border-zinc-500 border-dashed" style={{ left: '100%' }} />
     </div>
   );
 }
 
 function KpiCard({ label, value, target, unit = '', icon: Icon }) {
   const { pct, atteint, hasValue } = calculerProgression(value, target);
+  const badgeClass = atteint
+    ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
+    : pct >= 75
+    ? 'bg-yellow-950 text-yellow-300 border border-yellow-800'
+    : pct >= 50
+    ? 'bg-orange-950 text-orange-300 border border-orange-800'
+    : 'bg-red-950 text-red-300 border border-red-800';
+  const badgeLabel = atteint ? 'Atteint' : pct >= 75 ? 'Proche' : pct >= 50 ? 'En cours' : 'À risque';
   return (
     <div className="bg-zinc-900 rounded-xl p-5 border border-zinc-800 hover:border-zinc-700 transition">
       <div className="flex items-start justify-between mb-3">
         <div className="flex items-center gap-2 text-zinc-400 text-sm"><Icon className="w-4 h-4" />{label}</div>
-        {hasValue && <span className={`text-xs px-2 py-0.5 rounded-full ${atteint ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'bg-red-950 text-red-300 border border-red-800'}`}>{atteint ? 'Atteint' : 'Sous objectif'}</span>}
+        {hasValue && <span className={`text-xs px-2 py-0.5 rounded-full ${badgeClass}`}>{badgeLabel}</span>}
       </div>
       <div className="display text-3xl font-bold text-zinc-50 mb-1">{hasValue ? `${value}${unit}` : '—'}</div>
       <div className="text-xs text-zinc-500 mb-3">Objectif : {target}{unit}</div>
@@ -438,10 +461,10 @@ function Dashboard({ data, moisData, tiktokData, setTab, persist }) {
           </div>
         </div>
         <div className="w-full h-3 bg-red-950/50 rounded-full overflow-hidden relative">
-          <div className={`h-full ${atteinte.atteint ? 'bg-emerald-400 shadow-[0_0_12px_rgba(52,211,153,0.7)]' : 'bg-yellow-400'} transition-all duration-500`} style={{ width: `${atteinte.pct}%` }} />
-          <div className="absolute top-0 bottom-0 border-l-2 border-white/40 border-dashed" style={{ left: '95%' }} />
+          <div className={`h-full ${couleurProgression(atteinte.pct)} ${atteinte.atteint ? 'shadow-[0_0_12px_rgba(52,211,153,0.7)]' : ''} transition-all duration-500`} style={{ width: `${atteinte.pct}%` }} />
+          <div className="absolute top-0 bottom-0 border-l-2 border-white/40 border-dashed" style={{ left: '100%' }} />
         </div>
-        <p className="text-xs text-red-200 mt-2">Seuil de validation pôle : 95%</p>
+        <p className="text-xs text-red-200 mt-2">Seuil de validation pôle : 100%</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -513,8 +536,8 @@ function SaisieJourneeRecap({ moisData, data }) {
   const Cell = ({ label, value, target, unit = '', n }) => {
     const num = parseFloat(value);
     const t = parseFloat(target);
-    const ok = !isNaN(num) && !isNaN(t) && num >= t * 0.95;
-    const couleur = isNaN(num) ? 'text-zinc-500' : ok ? 'text-emerald-400' : num >= t * 0.7 ? 'text-amber-400' : 'text-red-400';
+    const pct = !isNaN(num) && !isNaN(t) && t > 0 ? (num / t) * 100 : 0;
+    const couleur = isNaN(num) ? 'text-zinc-500' : couleurProgressionText(pct);
     return (
       <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-3">
         <div className="text-xs text-zinc-500 mb-1">{label}</div>
@@ -813,7 +836,7 @@ function SaisieMensuelle({ data, persist, moisData, updateMoisData, updateJour, 
             const score = scoreGlobal(m.id, moisData, data);
             const statut = statutEvaluation(m.id);
             const ouvert = managerOuvert === m.id;
-            const couleur = score === null ? 'text-zinc-500' : score >= 75 ? 'text-emerald-400' : score >= 50 ? 'text-amber-400' : 'text-red-400';
+            const couleur = score === null ? 'text-zinc-500' : couleurProgressionText(score);
             const statutColor = statut.remplis === 0 ? 'bg-zinc-800 text-zinc-500' : statut.remplis === statut.total ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'bg-amber-950 text-amber-300 border border-amber-800';
 
             return (
@@ -833,7 +856,7 @@ function SaisieMensuelle({ data, persist, moisData, updateMoisData, updateJour, 
                     {score !== null && (
                       <div className="flex items-center gap-2 mt-1">
                         <div className="flex-1 max-w-xs h-1.5 bg-zinc-800 rounded-full overflow-hidden">
-                          <div className={`h-full ${score >= 75 ? 'bg-emerald-500' : score >= 50 ? 'bg-amber-500' : 'bg-red-500'}`} style={{ width: `${score}%` }} />
+                          <div className={`h-full ${couleurProgression(score)}`} style={{ width: `${score}%` }} />
                         </div>
                         <span className={`text-xs font-bold ${couleur}`}>{score.toFixed(0)}/100</span>
                       </div>
@@ -861,7 +884,7 @@ function SaisieMensuelle({ data, persist, moisData, updateMoisData, updateJour, 
                                 <p className="text-xs text-zinc-500">{axe.description}</p>
                               </div>
                             </div>
-                            {sc !== null && <span className={`text-sm font-bold ${sc >= 75 ? 'text-emerald-400' : sc >= 50 ? 'text-amber-400' : 'text-red-400'}`}>{sc.toFixed(0)}/100</span>}
+                            {sc !== null && <span className={`text-sm font-bold ${couleurProgressionText(sc)}`}>{sc.toFixed(0)}/100</span>}
                           </div>
 
                           {axe.type === 'pourcentage' && (
@@ -956,7 +979,7 @@ function SousCriteresHospitalite({ eval_, poidsHospitalite, onChange, onChangeCo
                   <p className="text-sm font-medium text-zinc-200">{sc.nom}</p>
                   <p className="text-xs text-zinc-600">Pondération : {poidsHospitalite[sc.id]}%</p>
                 </div>
-                {score !== null && <span className={`text-xs font-bold ${score >= 75 ? 'text-emerald-400' : score >= 50 ? 'text-amber-400' : 'text-red-400'}`}>{score.toFixed(0)}/100</span>}
+                {score !== null && <span className={`text-xs font-bold ${couleurProgressionText(score)}`}>{score.toFixed(0)}/100</span>}
               </div>
               <div className="flex gap-1 mb-2 flex-wrap">
                 {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
@@ -1036,7 +1059,7 @@ function ManagersConsultation({ data, moisData, setTab }) {
         </div>
         <div className="bg-zinc-900 rounded-xl p-4 border border-zinc-800">
           <p className="text-xs text-zinc-500">Moyenne équipe</p>
-          <p className={`display text-2xl font-bold ${moyenneEquipe === null ? 'text-zinc-500' : moyenneEquipe >= 75 ? 'text-emerald-400' : moyenneEquipe >= 50 ? 'text-amber-400' : 'text-red-400'}`}>
+          <p className={`display text-2xl font-bold ${moyenneEquipe === null ? 'text-zinc-500' : couleurProgressionText(moyenneEquipe)}`}>
             {moyenneEquipe !== null ? `${moyenneEquipe.toFixed(0)}/100` : '—'}
           </p>
         </div>
@@ -1063,9 +1086,9 @@ function ManagersConsultation({ data, moisData, setTab }) {
                 <span className="flex-1 font-medium text-zinc-200">{m.nom}</span>
                 <div className="flex items-center gap-3 flex-1 max-w-md">
                   <div className="flex-1 h-2 bg-zinc-800 rounded-full overflow-hidden">
-                    <div className={`h-full ${m.score >= 75 ? 'bg-emerald-500' : m.score >= 50 ? 'bg-amber-500' : 'bg-red-500'}`} style={{ width: `${m.score}%` }} />
+                    <div className={`h-full ${couleurProgression(m.score)}`} style={{ width: `${m.score}%` }} />
                   </div>
-                  <span className={`text-sm font-bold w-12 text-right ${m.score >= 75 ? 'text-emerald-400' : m.score >= 50 ? 'text-amber-400' : 'text-red-400'}`}>{m.score.toFixed(0)}</span>
+                  <span className={`text-sm font-bold w-12 text-right ${couleurProgressionText(m.score)}`}>{m.score.toFixed(0)}</span>
                 </div>
               </button>
             ))}
@@ -1080,7 +1103,7 @@ function ManagersConsultation({ data, moisData, setTab }) {
           const score = scoreGlobal(m.id, moisData, data);
           const histo = historiqueManager(m.id);
           const ouvert = managerDeplie === m.id;
-          const couleur = score === null ? 'text-zinc-500' : score >= 75 ? 'text-emerald-400' : score >= 50 ? 'text-amber-400' : 'text-red-400';
+          const couleur = score === null ? 'text-zinc-500' : couleurProgressionText(score);
 
           return (
             <div key={m.id} className="bg-zinc-900 rounded-xl border border-zinc-800 overflow-hidden">
@@ -1116,13 +1139,13 @@ function ManagersConsultation({ data, moisData, setTab }) {
                               <p className="font-semibold text-sm text-zinc-200">{axe.nom}</p>
                             </div>
                             {sc !== null ? (
-                              <span className={`text-xs font-bold ${sc >= 75 ? 'text-emerald-400' : sc >= 50 ? 'text-amber-400' : 'text-red-400'}`}>{sc.toFixed(0)}/100</span>
+                              <span className={`text-xs font-bold ${couleurProgressionText(sc)}`}>{sc.toFixed(0)}/100</span>
                             ) : <span className="text-xs text-zinc-600">Non évalué</span>}
                           </div>
                           {sc !== null && (
                             <>
                               <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden mb-2">
-                                <div className={`h-full ${sc >= 75 ? 'bg-emerald-500' : sc >= 50 ? 'bg-amber-500' : 'bg-red-500'}`} style={{ width: `${sc}%` }} />
+                                <div className={`h-full ${couleurProgression(sc)}`} style={{ width: `${sc}%` }} />
                               </div>
                               {axe.type === 'pourcentage' && eval_.valeur && <p className="text-xs text-zinc-400">Valeur : <span className="text-zinc-200 font-medium">{eval_.valeur}%</span></p>}
                               {axe.type === 'nombre' && eval_.valeur && <p className="text-xs text-zinc-400">Valeur : <span className="text-zinc-200 font-medium">{eval_.valeur}</span></p>}
@@ -1732,8 +1755,8 @@ function RapportMensuel({ data, persist, showToast }) {
             </div>
 
             <div className="w-full h-3 bg-red-950/50 rounded-full overflow-hidden relative mt-4">
-              <div className={`h-full ${atteinte.atteint ? 'bg-emerald-400' : 'bg-yellow-400'} transition-all duration-500`} style={{ width: `${atteinte.pct}%` }} />
-              <div className="absolute top-0 bottom-0 border-l-2 border-white/40 border-dashed" style={{ left: '95%' }} />
+              <div className={`h-full ${couleurProgression(atteinte.pct)} transition-all duration-500`} style={{ width: `${atteinte.pct}%` }} />
+              <div className="absolute top-0 bottom-0 border-l-2 border-white/40 border-dashed" style={{ left: '100%' }} />
             </div>
           </div>
 
@@ -1836,10 +1859,7 @@ function RapportMensuel({ data, persist, showToast }) {
                     </div>
                     <div className="bg-zinc-950 rounded-lg p-3 border border-zinc-800">
                       <p className="text-xs text-zinc-500">Moyenne équipe</p>
-                      <p className={`display text-xl font-bold ${
-                        (managersClasses.reduce((s, m) => s + m.score, 0) / managersClasses.length) >= 75 ? 'text-emerald-400' :
-                        (managersClasses.reduce((s, m) => s + m.score, 0) / managersClasses.length) >= 50 ? 'text-amber-400' : 'text-red-400'
-                      }`}>
+                      <p className={`display text-xl font-bold ${couleurProgressionText(managersClasses.reduce((s, m) => s + m.score, 0) / managersClasses.length)}`}>
                         {(managersClasses.reduce((s, m) => s + m.score, 0) / managersClasses.length).toFixed(0)}/100
                       </p>
                     </div>
@@ -1870,10 +1890,10 @@ function RapportMensuel({ data, persist, showToast }) {
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium truncate text-zinc-200">{m.nom}</p>
                           <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden mt-1">
-                            <div className={`h-full ${m.score >= 75 ? 'bg-emerald-500' : m.score >= 50 ? 'bg-amber-500' : 'bg-red-500'}`} style={{ width: `${m.score}%` }} />
+                            <div className={`h-full ${couleurProgression(m.score)}`} style={{ width: `${m.score}%` }} />
                           </div>
                         </div>
-                        <span className={`text-sm font-bold ${m.score >= 75 ? 'text-emerald-400' : m.score >= 50 ? 'text-amber-400' : 'text-red-400'}`}>
+                        <span className={`text-sm font-bold ${couleurProgressionText(m.score)}`}>
                           {m.score.toFixed(0)}
                         </span>
                       </div>
